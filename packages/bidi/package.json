@@ -1,0 +1,14 @@
+{
+  "name": "@termenal-web/bidi",
+  "version": "0.0.0",
+  "description": "UAX #9 bidirectional ordering + first-strong paragraph direction (parity with termenal-Ar).",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "bidi-js": "^1.0.3"
+  }
+}

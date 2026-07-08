@@ -35,8 +35,10 @@ direction uses first-strong (majority-strong tiebreak) inherited from
   (`g_rtlRanges`, `GetParagraphReadingDirection`).
 - **Verify:** ported base direction agrees with `bidi-js` and expected result on
   the sample set.
-- **Code:** ✅ [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 3, RTL_RANGES);
-  planned `packages/bidi/`.
+- **Code:** ✅ [`packages/bidi/src/index.ts`](../../../packages/bidi/src/index.ts)
+  (`RTL_RANGES`, `paragraphReadingDirection`, `getVisualOrder`) with tests
+  [`packages/bidi/test/bidi.test.ts`](../../../packages/bidi/test/bidi.test.ts);
+  original proof [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 3).
 
 ## D-3 — Performance: stronger and faster than xterm.js (SPEC-0001)
 

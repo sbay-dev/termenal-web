@@ -11,6 +11,9 @@ target/
 pkg/
 *.wasm.map
 
+# TypeScript incremental build info
+*.tsbuildinfo
+
 # Editor / OS
 .DS_Store
 Thumbs.db
