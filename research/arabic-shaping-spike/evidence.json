@@ -1,0 +1,146 @@
+{
+  "hb": "14.2.1",
+  "results": {
+    "joining": {
+      "word": "كتب",
+      "joinDiffs": 3,
+      "notdef": 0,
+      "perChar": [
+        {
+          "char": "ك",
+          "isolatedGid": 189,
+          "isolatedName": "gid189",
+          "inWordGid": 495,
+          "inWordName": "gid495"
+        },
+        {
+          "char": "ت",
+          "isolatedGid": 169,
+          "isolatedName": "gid169",
+          "inWordGid": 428,
+          "inWordName": "gid428"
+        },
+        {
+          "char": "ب",
+          "isolatedGid": 167,
+          "isolatedName": "gid167",
+          "inWordGid": 420,
+          "inWordName": "gid420"
+        }
+      ],
+      "wordGlyphs": [
+        {
+          "gid": 420,
+          "name": "gid420",
+          "cluster": 2,
+          "xAdvance": 1438,
+          "xOffset": 0
+        },
+        {
+          "gid": 428,
+          "name": "gid428",
+          "cluster": 1,
+          "xAdvance": 379,
+          "xOffset": 0
+        },
+        {
+          "gid": 495,
+          "name": "gid495",
+          "cluster": 0,
+          "xAdvance": 946,
+          "xOffset": 0
+        }
+      ]
+    },
+    "fallback": {
+      "notdef": 3,
+      "total": 3
+    },
+    "pipeline": {
+      "row": "مرحبا بالعالم",
+      "base": "rtl",
+      "visual": "ملاعلاب ابحرم",
+      "glyphs": [
+        {
+          "gid": 323,
+          "name": "gid323",
+          "cluster": 11,
+          "xAdvance": 634,
+          "xOffset": 0
+        },
+        {
+          "gid": 418,
+          "name": "gid418",
+          "cluster": 10,
+          "xAdvance": 420,
+          "xOffset": 0
+        },
+        {
+          "gid": 480,
+          "name": "gid480",
+          "cluster": 9,
+          "xAdvance": 606,
+          "xOffset": 0
+        },
+        {
+          "gid": 499,
+          "name": "gid499",
+          "cluster": 8,
+          "xAdvance": 342,
+          "xOffset": 0
+        },
+        {
+          "gid": 682,
+          "name": "gid682",
+          "cluster": 6,
+          "xAdvance": 799,
+          "xOffset": 0
+        },
+        {
+          "gid": 3,
+          "name": "gid3",
+          "cluster": 5,
+          "xAdvance": 500,
+          "xOffset": 0
+        },
+        {
+          "gid": 418,
+          "name": "gid418",
+          "cluster": 4,
+          "xAdvance": 420,
+          "xOffset": 0
+        },
+        {
+          "gid": 422,
+          "name": "gid422",
+          "cluster": 3,
+          "xAdvance": 379,
+          "xOffset": 0
+        },
+        {
+          "gid": 439,
+          "name": "gid439",
+          "cluster": 2,
+          "xAdvance": 1020,
+          "xOffset": 0
+        },
+        {
+          "gid": 450,
+          "name": "gid450",
+          "cluster": 1,
+          "xAdvance": 343,
+          "xOffset": -300
+        },
+        {
+          "gid": 503,
+          "name": "gid503",
+          "cluster": 0,
+          "xAdvance": 606,
+          "xOffset": 0
+        }
+      ],
+      "totalAdvance": 6069
+    }
+  },
+  "verdict": "PASS"
+}

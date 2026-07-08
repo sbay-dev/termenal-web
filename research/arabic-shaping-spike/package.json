@@ -1,0 +1,14 @@
+{
+  "name": "termenal-web-arabic-shaping-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Feasibility proof: Arabic contextual joining (HarfBuzz-WASM) + UAX#9 BiDi in a browser-portable runtime.",
+  "scripts": {
+    "spike": "node spike.mjs"
+  },
+  "dependencies": {
+    "harfbuzzjs": "^1.4.0",
+    "bidi-js": "^1.0.3"
+  }
+}
