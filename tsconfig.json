@@ -1,6 +1,8 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/bidi" }
+    { "path": "packages/bidi" },
+    { "path": "packages/shaping" },
+    { "path": "packages/terminal" }
   ]
 }

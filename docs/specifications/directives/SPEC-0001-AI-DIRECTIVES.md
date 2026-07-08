@@ -20,8 +20,10 @@ ligatures), driven by an OpenType shaper, never as isolated code points.
   `guessSegmentProperties` (harfbuzzjs v1 ordering constraint).
 - **Verify:** shaping a word yields glyph ids that differ from the isolated
   shaping of each letter (≥ 2 of 3 for `كتب`), with no `.notdef`.
-- **Code:** ✅ [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 1);
-  planned `packages/shaping/`.
+- **Code:** ✅ [`packages/shaping/src/index.ts`](../../../packages/shaping/src/index.ts)
+  (`loadFont`, `shapeRun`) with tests
+  [`packages/shaping/test/shaping.test.ts`](../../../packages/shaping/test/shaping.test.ts);
+  original proof [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 1).
 
 ## D-2 — Bidirectional ordering, UAX #9 (SPEC-0001, SPEC-0003)
 
@@ -54,8 +56,10 @@ direction uses first-strong (majority-strong tiebreak) inherited from
 Fixed stack: WASM VT core · `bidi-js` · `harfbuzzjs` · WebGPU renderer · shell
 bytes over WebSocket (no browser PTY).
 
-- **Code:** planned monorepo `packages/{core,bidi,shaping,renderer,terminal}`,
-  `apps/demo`.
+- **Code:** monorepo `packages/`: ✅ `bidi`, ✅ `shaping`, ✅ `terminal`
+  ([`packages/terminal/src/index.ts`](../../../packages/terminal/src/index.ts) —
+  `analyzeRow` + `shapeLogicalRow` compose bidi + shaping); planned `core`,
+  `renderer`, `apps/demo`.
 
 ## D-5 — Logical buffer, renderer owns visual (SPEC-0003)
 
@@ -63,15 +67,21 @@ The terminal buffer stays in logical order (copy/paste/screen-reader unaffected)
 only the renderer produces visual order + mirrored cursor.
 
 - **Verify:** selecting/copying an Arabic row yields logical code-point order.
-- **Code:** planned `packages/core/` (buffer), `packages/renderer/` (visual map).
+- **Code:** ✅ [`packages/terminal/src/index.ts`](../../../packages/terminal/src/index.ts)
+  keeps runs in logical order and isolates visual reordering in
+  `reorderRunsVisually` / `visualGlyphStream`; planned `packages/core/` (buffer),
+  `packages/renderer/` (visual map + mirrored cursor).
 
 ## D-6 — Font fallback for Arabic coverage (SPEC-0003)
 
 The monospace terminal face typically lacks Arabic (confirmed: Consolas → all
 `.notdef`). A fallback chain must supply Arabic glyphs.
 
-- **Code:** ✅ [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 2);
-  planned `packages/shaping/fallback`.
+- **Code:** ✅ font-fallback hook `FontResolver` (per-run font selection) in
+  [`packages/terminal/src/index.ts`](../../../packages/terminal/src/index.ts) +
+  coverage check `hasFullCoverage` in
+  [`packages/shaping/src/index.ts`](../../../packages/shaping/src/index.ts);
+  original proof [`research/arabic-shaping-spike/spike.mjs`](../../../research/arabic-shaping-spike/spike.mjs) (PROOF 2).
 
 ## D-7 — Spike-first + honesty gates (SPEC-0004)
 
