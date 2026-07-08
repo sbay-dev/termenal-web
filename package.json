@@ -6,7 +6,8 @@
   "description": "Arabic / RTL terminal for the browser.",
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "vitest run",

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>termenal-web — عرض تجريبي للربط العربي</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --fg: #e6edf3;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --ok: #3fb950;
+        --warn: #d29922;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      header h1 { margin: 0 0 4px; font-size: 18px; }
+      header p { margin: 0; color: var(--muted); font-size: 13px; }
+      header code { color: var(--accent); }
+      main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .controls > * { flex: none; }
+      textarea {
+        width: 100%;
+        min-height: 96px;
+        background: var(--panel);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 15px;
+        direction: rtl;
+        resize: vertical;
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+      button, label.filebtn {
+        background: #21262d;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:hover, label.filebtn:hover { border-color: var(--accent); }
+      .samples button { background: transparent; }
+      input[type="file"] { display: none; }
+      input[type="range"] { vertical-align: middle; }
+      .status { color: var(--muted); font-size: 13px; }
+      .status.ok { color: var(--ok); }
+      .status.warn { color: var(--warn); }
+      .canvas-block {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+      .canvas-block h2 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        letter-spacing: .3px;
+      }
+      .canvas-block h2 .tag { color: var(--ok); }
+      .canvas-block.naive h2 .tag { color: var(--warn); }
+      canvas { width: 100%; height: auto; display: block; border-radius: 4px; }
+      details {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+      }
+      details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+      pre {
+        margin: 10px 0 0;
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+        color: var(--fg);
+        white-space: pre-wrap;
+        word-break: break-word;
+        direction: ltr;
+        text-align: left;
+      }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>termenal-web — عرض تجريبي للربط العربي في المتصفح</h1>
+      <p>
+        يشكّل عبر <code>@termenal-web/terminal</code> (BiDi + HarfBuzz-WASM) ويرسم
+        مسارات المجسّمات الحقيقية على <code>&lt;canvas&gt;</code>. لا يعتمد على تشكيل المتصفح.
+      </p>
+    </header>
+    <main>
+      <div class="row">
+        <label class="filebtn" for="font">① اختر خطًّا عربيًّا (.ttf/.otf)</label>
+        <input id="font" type="file" accept=".ttf,.otf,.ttc,font/ttf,font/otf" />
+        <span id="fontStatus" class="status warn">لم يُحمّل خط بعد — اختر مثلًا C:\Windows\Fonts\trado.ttf أو arial.ttf</span>
+      </div>
+
+      <div class="row samples">
+        <span class="status">أمثلة:</span>
+        <button data-sample="مرحبا بالعالم من الطرفية">جملة عربية</button>
+        <button data-sample="افتح المجلد src ثم شغّل npm test">عربي + إنجليزي</button>
+        <button data-sample="المستخدم@الخادم:~$ ls -la /home">سطر أوامر مختلط</button>
+        <button data-sample="لا حول ولا قوة إلا بالله">روابط لام-ألف</button>
+      </div>
+
+      <textarea id="input" spellcheck="false">مرحبا بالعالم من الطرفية
+افتح المجلد src ثم شغّل npm test
+ls -la /home/user</textarea>
+
+      <div class="row">
+        <label class="status" for="size">حجم الخط: <span id="sizeVal">32</span>px</label>
+        <input id="size" type="range" min="16" max="72" value="32" />
+      </div>
+
+      <div class="canvas-block ours">
+        <h2>خطّنا <span class="tag">✓ مع الربط + BiDi (visual order)</span></h2>
+        <canvas id="ours"></canvas>
+      </div>
+
+      <div class="canvas-block naive">
+        <h2>راسم ساذج <span class="tag">✗ أحرف منعزلة، بلا ربط (كتشبيه لـ xterm.js)</span></h2>
+        <canvas id="naive"></canvas>
+      </div>
+
+      <details>
+        <summary>تفاصيل التحليل (اتجاه، مقاطع، مجسّمات)</summary>
+        <pre id="details">—</pre>
+      </details>
+      <p class="hint">
+        الخط يُقرأ محليًّا في متصفحك عبر واجهة <code>loadFont(bytes)</code> المتصفّحية-النقية؛
+        لا يُرفع ولا يُخزّن. لا يُشحن أي خط مملوك مع هذا العرض.
+      </p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "types": []
+  },
+  "references": [
+    { "path": "../../packages/terminal" },
+    { "path": "../../packages/shaping" }
+  ],
+  "include": ["src"]
+}

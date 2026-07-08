@@ -1,0 +1,19 @@
+{
+  "name": "@termenal-web/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser demo: renders the @termenal-web pipeline (bidi + HarfBuzz) to a canvas.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@termenal-web/terminal": "*",
+    "@termenal-web/shaping": "*"
+  },
+  "devDependencies": {
+    "vite": "^7.1.5"
+  }
+}
