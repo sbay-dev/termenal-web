@@ -18,6 +18,7 @@ import {
   reorderRunsVisually,
   type LoadedFont,
   type RunSpan,
+  type ShapedRun,
 } from '@termenal-web/terminal';
 import { shapeRun, totalAdvance } from '@termenal-web/shaping';
 
@@ -173,12 +174,18 @@ interface RowModel {
   fgAt: string[];
   /** Per-cell background rectangles that differ from the default. */
   bg: { x: number; w: number; css: string }[];
+  /** Buffer cell column for each UTF-16 offset of `text`. */
+  colOfOffset: number[];
+  /** Number of grid cells the (trimmed) content occupies from column 0. */
+  usedCols: number;
 }
 
 function buildRow(line: BufLine): RowModel {
   let text = '';
   const fgAt: string[] = [];
+  const colOfOffset: number[] = [];
   const bg: { x: number; w: number; css: string }[] = [];
+  let contentRight = 0; // one past the last non-blank cell
   const scratch = term.buffer.active.getNullCell?.();
   for (let x = 0; x < cols; x++) {
     const cell = line.getCell(x, scratch);
@@ -191,30 +198,104 @@ function buildRow(line: BufLine): RowModel {
     const inverse = cell.isInverse();
     const fg = inverse ? bgColor(cell) : fgColor(cell);
     const bgc = inverse ? fgColor(cell) : bgColor(cell);
-    for (let i = 0; i < chars.length; i++) fgAt.push(fg);
+    for (let i = 0; i < chars.length; i++) {
+      fgAt.push(fg);
+      colOfOffset.push(x);
+    }
     text += chars;
     if (bgc !== DEFAULT_BG) bg.push({ x, w, css: bgc });
+    if (chars !== ' ') contentRight = x + w;
   }
   // Trim trailing blanks for cheaper shaping (bg rects already captured above).
   let end = text.length;
   while (end > 0 && text.charCodeAt(end - 1) === 0x20) end--;
-  return { text: text.slice(0, end), fgAt, bg };
+  return {
+    text: text.slice(0, end),
+    fgAt: fgAt.slice(0, end),
+    bg,
+    colOfOffset: colOfOffset.slice(0, end),
+    usedCols: contentRight,
+  };
 }
 
-function drawRow(y: number, model: RowModel): void {
+// A laid-out row: shaped runs placed on the cell grid, with a logical-cell ->
+// visual-cell permutation so Arabic lines can be right-aligned (RTL base) and so
+// the cursor and selection map onto the mirrored cells correctly.
+interface RowLayout {
+  model: RowModel;
+  baseDir: 'ltr' | 'rtl';
+  usedCols: number;
+  /** Draw order: each run with the grid column its first glyph starts at. */
+  bands: { run: ShapedRun; startVisualCol: number }[];
+  /** Visual grid column for a given logical cell column. */
+  colToVisual: number[];
+  /** Logical cell column for a given visual grid column. */
+  visualToCol: number[];
+}
+
+function computeRowLayout(model: RowModel): RowLayout {
+  const shaped = shapeLogicalRow(resolveFont, model.text);
+  const reordered = reorderRunsVisually(shaped.runs);
+  const baseDir = shaped.baseDirection;
+  const usedCols = Math.min(model.usedCols, cols);
+  // RTL paragraphs hug the right edge of the terminal width.
+  const shift = baseDir === 'rtl' ? Math.max(0, cols - usedCols) : 0;
+
+  const colToVisual: number[] = new Array(cols);
+  const visualToCol: number[] = new Array(cols);
+  for (let c = 0; c < cols; c++) {
+    colToVisual[c] = c;
+    visualToCol[c] = c;
+  }
+
+  const bands: RowLayout['bands'] = [];
+  let v = 0;
+  for (const run of reordered) {
+    const cells: number[] = [];
+    let prev = -1;
+    for (let o = run.start; o < run.end; o++) {
+      const c = model.colOfOffset[o]!;
+      if (c !== prev) {
+        cells.push(c);
+        prev = c;
+      }
+    }
+    const n = cells.length;
+    for (let i = 0; i < n; i++) {
+      const logicalCol = cells[i]!;
+      const posInBand = run.direction === 'rtl' ? n - 1 - i : i;
+      colToVisual[logicalCol] = shift + v + posInBand;
+    }
+    bands.push({ run, startVisualCol: shift + v });
+    v += n;
+  }
+  // Trailing blank logical cells fill the grid columns the content left empty.
+  if (baseDir === 'rtl') {
+    for (let c = usedCols; c < cols; c++) colToVisual[c] = c - usedCols;
+  }
+  for (let c = 0; c < cols; c++) {
+    const vc = colToVisual[c];
+    if (vc !== undefined && vc >= 0 && vc < cols) visualToCol[vc] = c;
+  }
+  return { model, baseDir, usedCols, bands, colToVisual, visualToCol };
+}
+
+function drawRow(y: number, layout: RowLayout): void {
   const top = y * lineH;
+  const model = layout.model;
   for (const rect of model.bg) {
+    const vc = layout.colToVisual[rect.x] ?? rect.x;
     ctx.fillStyle = rect.css;
-    ctx.fillRect(rect.x * cellW, top, cellW * rect.w, lineH);
+    ctx.fillRect(vc * cellW, top, cellW * rect.w, lineH);
   }
   if (model.text.length === 0) return;
 
   const baseline = top + baseOff;
-  const row = shapeLogicalRow(resolveFont, model.text);
-  let penX = 0;
-  for (const run of reorderRunsVisually(row.runs)) {
+  for (const band of layout.bands) {
+    const run = band.run;
     const font = resolveFont(run);
     const sc = fontSize / font.unitsPerEm;
+    let penX = band.startVisualCol * cellW;
     for (const g of run.glyphs) {
       const color = model.fgAt[run.start + g.cluster] ?? DEFAULT_FG;
       const d = glyphPath(font, g.glyphId);
@@ -234,22 +315,64 @@ function drawRow(y: number, model: RowModel): void {
 let cursorOn = true;
 let focused = false;
 
+// --------------------------------------------------------------- scroll state
+// Absolute buffer line shown at the top of the viewport. When `stickBottom` is
+// true we follow new output; the wheel detaches to browse the scrollback.
+let scrollTop = 0;
+let stickBottom = true;
+let viewTop = 0; // resolved top line of the current frame (for hit-testing)
+
+// ------------------------------------------------------------ selection state
+interface CellPos {
+  line: number; // absolute buffer line index
+  col: number; // logical cell column
+}
+let selAnchor: CellPos | null = null;
+let selFocus: CellPos | null = null;
+let selecting = false;
+
+/** Ordered [start, end] of the current selection, or null. */
+function selectionRange(): [CellPos, CellPos] | null {
+  if (!selAnchor || !selFocus) return null;
+  const a = selAnchor;
+  const b = selFocus;
+  if (a.line < b.line || (a.line === b.line && a.col <= b.col)) return [a, b];
+  return [b, a];
+}
+
+// Per-frame layout cache so cursor drawing, selection highlight and mouse
+// hit-testing all agree with what was actually painted.
+const frameLayouts: (RowLayout | null)[] = [];
+
 function render(): void {
   if (!monoFont) return;
   ctx.fillStyle = DEFAULT_BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const buf = term.buffer.active;
-  const top = buf.baseY;
+  const baseY = buf.baseY;
+  if (stickBottom) scrollTop = baseY;
+  scrollTop = Math.max(0, Math.min(scrollTop, baseY));
+  viewTop = scrollTop;
+
+  frameLayouts.length = 0;
   for (let y = 0; y < rows; y++) {
-    const line = buf.getLine(top + y);
-    if (line) drawRow(y, buildRow(line));
+    const line = buf.getLine(viewTop + y);
+    const layout = line ? computeRowLayout(buildRow(line)) : null;
+    frameLayouts[y] = layout;
+    if (layout) drawRow(y, layout);
   }
 
-  // Block cursor at grid column/row (accurate for monospace content).
-  if (cursorOn && buf.cursorY >= 0 && buf.cursorY < rows) {
+  drawSelection();
+
+  // Block cursor at its (possibly mirrored) grid cell — only while pinned to the
+  // live bottom, since the cursor lives on the active viewport.
+  const curScreenY = baseY + buf.cursorY - viewTop;
+  if (cursorOn && curScreenY >= 0 && curScreenY < rows) {
+    const layout = frameLayouts[curScreenY];
+    const vcol = layout?.colToVisual[buf.cursorX] ?? buf.cursorX;
     ctx.fillStyle = focused ? 'rgba(88,166,255,0.75)' : 'rgba(88,166,255,0.35)';
-    ctx.fillRect(buf.cursorX * cellW, buf.cursorY * lineH, cellW, lineH);
+    ctx.fillRect(vcol * cellW, curScreenY * lineH, cellW, lineH);
   }
 
   const glyphs = countGlyphs();
@@ -260,20 +383,37 @@ function render(): void {
     cursorY: buf.cursorY,
     connected,
     glyphs,
+    scrolledBack: baseY - viewTop,
+    hasSelection: selectionRange() !== null,
   };
+}
+
+/** Translucent highlight over the selected cells (visual positions). */
+function drawSelection(): void {
+  const range = selectionRange();
+  if (!range) return;
+  const [start, end] = range;
+  ctx.fillStyle = 'rgba(88,166,255,0.30)';
+  for (let y = 0; y < rows; y++) {
+    const absLine = viewTop + y;
+    if (absLine < start.line || absLine > end.line) continue;
+    const layout = frameLayouts[y];
+    const c0 = absLine === start.line ? start.col : 0;
+    const c1 = absLine === end.line ? end.col : cols;
+    for (let c = c0; c < c1 && c < cols; c++) {
+      const vc = layout?.colToVisual[c] ?? c;
+      ctx.fillRect(vc * cellW, y * lineH, cellW, lineH);
+    }
+  }
 }
 
 // Diagnostic helper (used by the headless verifier): count drawn glyphs.
 function countGlyphs(): number {
-  const buf = term.buffer.active;
-  const top = buf.baseY;
   let n = 0;
   for (let y = 0; y < rows; y++) {
-    const line = buf.getLine(top + y);
-    if (!line) continue;
-    const { text } = buildRow(line);
-    if (text.length === 0) continue;
-    for (const run of shapeLogicalRow(resolveFont, text).runs) n += run.glyphs.length;
+    const layout = frameLayouts[y];
+    if (!layout) continue;
+    for (const band of layout.bands) n += band.run.glyphs.length;
   }
   return n;
 }
@@ -418,10 +558,24 @@ function keyToBytes(e: KeyboardEvent): string | null {
 }
 
 termWrap.addEventListener('keydown', (e) => {
+  // Copy / paste use the terminal convention Ctrl+Shift+C / Ctrl+Shift+V so that
+  // a bare Ctrl+C still reaches the shell as SIGINT.
+  if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+    e.preventDefault();
+    void copySelection();
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+    e.preventDefault();
+    void pasteFromClipboard();
+    return;
+  }
   if (!connected) return;
   const bytes = keyToBytes(e);
   if (bytes !== null) {
     e.preventDefault();
+    clearSelection();
+    snapToBottom();
     sendInput(bytes);
   }
 });
@@ -430,6 +584,7 @@ termWrap.addEventListener('paste', (e) => {
   const text = e.clipboardData?.getData('text');
   if (text) {
     e.preventDefault();
+    snapToBottom();
     sendInput(text);
   }
 });
@@ -440,6 +595,145 @@ termWrap.addEventListener('focus', () => {
 });
 termWrap.addEventListener('blur', () => {
   focused = false;
+  markDirty();
+});
+
+// ----------------------------------------------------------- scroll & selection
+function snapToBottom(): void {
+  stickBottom = true;
+  markDirty();
+}
+
+function scrollByLines(delta: number): void {
+  const baseY = term.buffer.active.baseY;
+  const cur = stickBottom ? baseY : scrollTop;
+  const next = Math.max(0, Math.min(cur + delta, baseY));
+  scrollTop = next;
+  stickBottom = next >= baseY;
+  markDirty();
+}
+
+termWrap.addEventListener(
+  'wheel',
+  (e) => {
+    const step = e.deltaMode === 1 ? 1 : 3; // lines vs pixels
+    const lines = Math.sign(e.deltaY) * step;
+    if (lines !== 0) {
+      e.preventDefault();
+      scrollByLines(lines);
+    }
+  },
+  { passive: false },
+);
+
+function clearSelection(): void {
+  if (selAnchor || selFocus) {
+    selAnchor = null;
+    selFocus = null;
+    markDirty();
+  }
+}
+
+/** Map a canvas pixel to an absolute buffer cell (accounts for RTL mirroring). */
+function hitTest(px: number, py: number): CellPos {
+  const y = Math.max(0, Math.min(Math.floor(py / lineH), rows - 1));
+  const layout = frameLayouts[y];
+  const vcol = Math.max(0, Math.min(Math.floor(px / cellW), cols));
+  const col = layout?.visualToCol[vcol] ?? vcol;
+  return { line: viewTop + y, col };
+}
+
+/** Extract the selected text in LOGICAL (buffer) order — correct for pasting. */
+function selectionText(): string {
+  const range = selectionRange();
+  if (!range) return '';
+  const [start, end] = range;
+  const buf = term.buffer.active;
+  const scratch = buf.getNullCell?.();
+  const out: string[] = [];
+  for (let line = start.line; line <= end.line; line++) {
+    const bl = buf.getLine(line);
+    if (!bl) {
+      out.push('');
+      continue;
+    }
+    const c0 = line === start.line ? start.col : 0;
+    const c1 = line === end.line ? end.col : cols;
+    let s = '';
+    for (let x = c0; x < c1; x++) {
+      const cell = bl.getCell(x, scratch);
+      if (!cell || cell.getWidth() === 0) continue;
+      const chars = cell.getChars();
+      s += chars === '' ? ' ' : chars;
+    }
+    out.push(s.replace(/\s+$/, ''));
+  }
+  return out.join('\n');
+}
+
+async function copySelection(): Promise<void> {
+  const text = selectionText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* clipboard may be blocked without a user gesture; ignore */
+  }
+}
+
+async function pasteFromClipboard(): Promise<void> {
+  if (!connected) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      snapToBottom();
+      sendInput(text);
+    }
+  } catch {
+    /* fall back to the browser paste event (Ctrl+Shift+V may be blocked) */
+  }
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  termWrap.focus();
+  const p = hitTest(e.offsetX, e.offsetY);
+  selAnchor = p;
+  selFocus = p;
+  selecting = true;
+  markDirty();
+});
+window.addEventListener('mousemove', (e) => {
+  if (!selecting) return;
+  const r = canvas.getBoundingClientRect();
+  selFocus = hitTest(e.clientX - r.left, e.clientY - r.top);
+  markDirty();
+});
+window.addEventListener('mouseup', () => {
+  if (!selecting) return;
+  selecting = false;
+  void copySelection(); // copy-on-select, like a native terminal
+});
+// Double-click selects the word under the pointer.
+canvas.addEventListener('dblclick', (e) => {
+  const layout = frameLayouts[Math.max(0, Math.min(Math.floor(e.offsetY / lineH), rows - 1))];
+  const p = hitTest(e.offsetX, e.offsetY);
+  const bl = term.buffer.active.getLine(p.line);
+  if (!bl || !layout) return;
+  const scratch = term.buffer.active.getNullCell?.();
+  const isWord = (x: number): boolean => {
+    const cell = bl.getCell(x, scratch);
+    const ch = cell?.getChars() ?? '';
+    return ch !== '' && ch !== ' ';
+  };
+  if (!isWord(p.col)) return;
+  let a = p.col;
+  let b = p.col;
+  while (a > 0 && isWord(a - 1)) a--;
+  while (b < cols - 1 && isWord(b + 1)) b++;
+  selAnchor = { line: p.line, col: a };
+  selFocus = { line: p.line, col: b + 1 };
+  void copySelection();
   markDirty();
 });
 
@@ -529,5 +823,21 @@ setInterval(() => {
   cursorOn = !cursorOn;
   if (focused) markDirty();
 }, 530);
+
+// Verification/debug hooks (used by the headless E2E verifier).
+(window as unknown as Record<string, unknown>).__rowInfo = () =>
+  frameLayouts.map((l, y) =>
+    l
+      ? {
+          y,
+          text: l.model.text,
+          baseDir: l.baseDir,
+          startVisualCol: l.bands[0]?.startVisualCol ?? 0,
+          usedCols: l.usedCols,
+        }
+      : null,
+  );
+(window as unknown as Record<string, unknown>).__selectionText = () => selectionText();
+(window as unknown as Record<string, unknown>).__scrollByLines = (n: number) => scrollByLines(n);
 
 void autoInit();
