@@ -89,16 +89,17 @@
     </header>
     <main>
       <div class="row">
-        <label class="filebtn" for="fontMono">① خط أحادي (Latin) — مثل consola.ttf</label>
+        <span class="status">خطوط افتراضية مضمّنة (Cousine + Tajawal، رخصة OFL) تُحمّل تلقائيًّا.</span>
+        <label class="filebtn" for="fontMono">استبدل الخط الأحادي…</label>
         <input id="fontMono" type="file" accept=".ttf,.otf,.ttc" />
-        <label class="filebtn" for="fontArabic">② خط عربي (اختياري) — مثل trado.ttf</label>
+        <label class="filebtn" for="fontArabic">استبدل الخط العربي…</label>
         <input id="fontArabic" type="file" accept=".ttf,.otf,.ttc" />
       </div>
 
       <div class="row">
-        <button id="connect" disabled>الاتصال بالصدفة</button>
+        <button id="connect" disabled>إعادة الاتصال</button>
         <button id="disconnect" disabled>قطع</button>
-        <span id="status" class="status warn"><span class="dot warn"></span>اختر خطًّا أحاديًّا أولًا</span>
+        <span id="status" class="status warn"><span class="dot warn"></span>يبدأ التشغيل…</span>
         <span class="spacer"></span>
         <label class="status" for="size">الحجم: <span id="sizeVal">16</span>px</label>
         <input id="size" type="range" min="12" max="28" value="16" />
@@ -109,11 +110,10 @@
       </div>
 
       <p class="hint">
-        شغّل الجسر المحلي أولًا في نافذة أوامر:
-        <code>npm run server</code>
-        (يستمع على <code>ws://127.0.0.1:5179</code>). ثم اختر خطًّا، اضغط
-        «الاتصال بالصدفة»، وانقر داخل الطرفية واكتب أوامرك — مثل <code>dir</code> أو
-        <code>Get-Date</code> أو <code>echo مرحبا</code>. الخطوط تُقرأ محليًّا ولا تُرفع.
+        الصفحة تحمّل الخطوط الافتراضية وتتّصل بالصدفة تلقائيًّا (شرط تشغيل الجسر
+        المحلي <code>npm run server</code> على <code>ws://127.0.0.1:5179</code>).
+        انقر داخل الطرفية واكتب أوامرك — مثل <code>dir</code> أو <code>Get-Date</code>
+        أو <code>echo مرحبا</code>. الخطوط مضمّنة برخصة OFL وتُقرأ محليًّا.
       </p>
     </main>
     <script type="module" src="/src/terminal.ts"></script>

@@ -472,6 +472,38 @@ arabicInput.addEventListener('change', () => {
   if (f) void loadFontFile(f, 'arabic');
 });
 
+// Bundled, openly-licensed defaults (SIL OFL) so the terminal works the instant
+// the page opens — no font picker needed. The pickers above stay as overrides.
+const DEFAULT_MONO_URL = '/fonts/Cousine-Regular.ttf';
+const DEFAULT_ARABIC_URL = '/fonts/Tajawal-Regular.ttf';
+
+async function loadFontFromUrl(url: string): Promise<LoadedFont> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} → ${res.status}`);
+  return loadFont(new Uint8Array(await res.arrayBuffer()));
+}
+
+async function autoInit(): Promise<void> {
+  setStatus('يحمّل الخط الافتراضي…', 'warn');
+  try {
+    const [mono, arabic] = await Promise.all([
+      loadFontFromUrl(DEFAULT_MONO_URL),
+      loadFontFromUrl(DEFAULT_ARABIC_URL),
+    ]);
+    monoFont = mono;
+    arabicFont = arabic;
+    (window as unknown as Record<string, unknown>).__fontsReady = true;
+    connectBtn.disabled = false;
+    applyGrid();
+    connect(); // auto-connect for an immediately-live terminal
+  } catch (err) {
+    setStatus(
+      `تعذّر تحميل الخط الافتراضي (${(err as Error).message}) — اختر خطًّا يدويًّا`,
+      'err',
+    );
+  }
+}
+
 // ------------------------------------------------------------------- controls
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
@@ -497,3 +529,5 @@ setInterval(() => {
   cursorOn = !cursorOn;
   if (focused) markDirty();
 }, 530);
+
+void autoInit();
