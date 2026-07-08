@@ -225,6 +225,8 @@ interface RowLayout {
   model: RowModel;
   baseDir: 'ltr' | 'rtl';
   usedCols: number;
+  /** True when the row is drawn on the strict physical grid (app-painted UI). */
+  physical: boolean;
   /** Draw order: each run with the grid column its first glyph starts at. */
   bands: { run: ShapedRun; startVisualCol: number }[];
   /** Visual grid column for a given logical cell column. */
@@ -233,13 +235,29 @@ interface RowLayout {
   visualToCol: number[];
 }
 
+// Full-screen / TUI applications (copilot CLI, vim, less, git log …) paint boxes,
+// status bars and coloured backgrounds and position every glyph by absolute
+// column. Per-line paragraph BiDi (right-aligning a row, or mirroring its runs
+// because it happens to contain more Arabic than Latin) shears that layout: some
+// rows flip while their neighbours don't, so borders and bars stop lining up.
+// We detect such rows and pin them to the physical grid — Arabic is still shaped
+// and mirrored *within* each run, but the columns the app chose are preserved.
+function isStructuredRow(model: RowModel): boolean {
+  if (term.buffer.active.type === 'alternate') return true; // full-screen app
+  if (model.bg.length > 0) return true; // background bars / boxes / highlights
+  for (const ch of model.text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    // Box drawing (U+2500–257F) + block elements (U+2580–259F) = drawn frames.
+    if (cp >= 0x2500 && cp <= 0x259f) return true;
+  }
+  return false;
+}
+
 function computeRowLayout(model: RowModel): RowLayout {
   const shaped = shapeLogicalRow(resolveFont, model.text);
-  const reordered = reorderRunsVisually(shaped.runs);
   const baseDir = shaped.baseDirection;
   const usedCols = Math.min(model.usedCols, cols);
-  // RTL paragraphs hug the right edge of the terminal width.
-  const shift = baseDir === 'rtl' ? Math.max(0, cols - usedCols) : 0;
+  const physical = isStructuredRow(model);
 
   const colToVisual: number[] = new Array(cols);
   const visualToCol: number[] = new Array(cols);
@@ -249,8 +267,7 @@ function computeRowLayout(model: RowModel): RowLayout {
   }
 
   const bands: RowLayout['bands'] = [];
-  let v = 0;
-  for (const run of reordered) {
+  const runCells = (run: ShapedRun): number[] => {
     const cells: number[] = [];
     let prev = -1;
     for (let o = run.start; o < run.end; o++) {
@@ -260,24 +277,50 @@ function computeRowLayout(model: RowModel): RowLayout {
         prev = c;
       }
     }
-    const n = cells.length;
-    for (let i = 0; i < n; i++) {
-      const logicalCol = cells[i]!;
-      const posInBand = run.direction === 'rtl' ? n - 1 - i : i;
-      colToVisual[logicalCol] = shift + v + posInBand;
+    return cells;
+  };
+
+  if (physical) {
+    // Physical grid: every run stays at the columns the app placed it in; only
+    // the glyphs inside an RTL run are mirrored so the Arabic word reads R→L.
+    for (const run of shaped.runs) {
+      const cells = runCells(run);
+      const n = cells.length;
+      const start = cells[0] ?? 0;
+      for (let i = 0; i < n; i++) {
+        const logicalCol = cells[i]!;
+        const posInBand = run.direction === 'rtl' ? n - 1 - i : i;
+        colToVisual[logicalCol] = start + posInBand;
+      }
+      bands.push({ run, startVisualCol: start });
     }
-    bands.push({ run, startVisualCol: shift + v });
-    v += n;
+  } else {
+    // Plain shell output: full paragraph BiDi + right-align RTL paragraphs.
+    const reordered = reorderRunsVisually(shaped.runs);
+    const shift = baseDir === 'rtl' ? Math.max(0, cols - usedCols) : 0;
+    let v = 0;
+    for (const run of reordered) {
+      const cells = runCells(run);
+      const n = cells.length;
+      for (let i = 0; i < n; i++) {
+        const logicalCol = cells[i]!;
+        const posInBand = run.direction === 'rtl' ? n - 1 - i : i;
+        colToVisual[logicalCol] = shift + v + posInBand;
+      }
+      bands.push({ run, startVisualCol: shift + v });
+      v += n;
+    }
+    // Trailing blank logical cells fill the grid columns the content left empty.
+    if (baseDir === 'rtl') {
+      for (let c = usedCols; c < cols; c++) colToVisual[c] = c - usedCols;
+    }
   }
-  // Trailing blank logical cells fill the grid columns the content left empty.
-  if (baseDir === 'rtl') {
-    for (let c = usedCols; c < cols; c++) colToVisual[c] = c - usedCols;
-  }
+
   for (let c = 0; c < cols; c++) {
     const vc = colToVisual[c];
     if (vc !== undefined && vc >= 0 && vc < cols) visualToCol[vc] = c;
   }
-  return { model, baseDir, usedCols, bands, colToVisual, visualToCol };
+  return { model, baseDir, usedCols, physical, bands, colToVisual, visualToCol };
 }
 
 function drawRow(y: number, layout: RowLayout): void {
@@ -336,6 +379,9 @@ function selectionRange(): [CellPos, CellPos] | null {
   if (!selAnchor || !selFocus) return null;
   const a = selAnchor;
   const b = selFocus;
+  // A zero-width selection (a bare click) is not a selection: Ctrl+C must still
+  // reach the shell as SIGINT rather than being swallowed as a copy.
+  if (a.line === b.line && a.col === b.col) return null;
   if (a.line < b.line || (a.line === b.line && a.col <= b.col)) return [a, b];
   return [b, a];
 }
@@ -558,16 +604,21 @@ function keyToBytes(e: KeyboardEvent): string | null {
 }
 
 termWrap.addEventListener('keydown', (e) => {
-  // Copy / paste use the terminal convention Ctrl+Shift+C / Ctrl+Shift+V so that
-  // a bare Ctrl+C still reaches the shell as SIGINT.
-  if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+  // Ctrl+C is the command line's most important key: with an active selection it
+  // copies (and clears it); otherwise it falls through to keyToBytes and reaches
+  // the shell as SIGINT (\x03). Ctrl+V pastes. We deliberately avoid Ctrl+Shift+C
+  // / Ctrl+Shift+V because those are reserved by the browser (dev tools).
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C') && selectionRange()) {
     e.preventDefault();
-    void copySelection();
+    const p = selectionClientPos();
+    void copySelectionNotify(p.x, p.y);
     return;
   }
-  if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
     e.preventDefault();
-    void pasteFromClipboard();
+    lastKbPasteAt = Date.now();
+    const p = cursorClientPos();
+    void pasteNotify(p.x, p.y);
     return;
   }
   if (!connected) return;
@@ -581,11 +632,14 @@ termWrap.addEventListener('keydown', (e) => {
 });
 termWrap.addEventListener('paste', (e) => {
   if (!connected) return;
+  if (Date.now() - lastKbPasteAt < 300) return; // already handled by the Ctrl+V keydown
   const text = e.clipboardData?.getData('text');
   if (text) {
     e.preventDefault();
     snapToBottom();
     sendInput(text);
+    const p = cursorClientPos();
+    showToast('تم اللصق ✓', p.x, p.y, 'ok');
   }
 });
 termWrap.addEventListener('focus', () => {
@@ -671,30 +725,105 @@ function selectionText(): string {
   return out.join('\n');
 }
 
-async function copySelection(): Promise<void> {
-  const text = selectionText();
-  if (!text) return;
+// Last known pointer position (viewport coords), so keyboard-triggered toasts
+// still have a sensible anchor.
+let lastPointer = { x: 0, y: 0 };
+// Timestamp of the last Ctrl+V so the native paste event can avoid a double.
+let lastKbPasteAt = 0;
+
+async function writeClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
+    return true;
   } catch {
-    /* clipboard may be blocked without a user gesture; ignore */
+    return false;
   }
 }
 
-async function pasteFromClipboard(): Promise<void> {
-  if (!connected) return;
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text) {
-      snapToBottom();
-      sendInput(text);
-    }
-  } catch {
-    /* fall back to the browser paste event (Ctrl+Shift+V may be blocked) */
+/** Silent copy (used by copy-on-select and double-click). */
+async function copySelection(): Promise<void> {
+  const text = selectionText();
+  if (text) await writeClipboard(text);
+}
+
+/** An evaporating toast that rises from (clientX, clientY) then fades out. */
+function showToast(text: string, clientX: number, clientY: number, kind: 'ok' | 'err' | 'info' = 'ok'): void {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = text;
+  el.style.left = `${clientX}px`;
+  el.style.top = `${clientY}px`;
+  document.body.appendChild(el);
+  const anim = el.animate(
+    [
+      { opacity: 0, transform: 'translate(-50%, -40%) scale(0.92)' },
+      { opacity: 1, transform: 'translate(-50%, -95%) scale(1)', offset: 0.18 },
+      { opacity: 0.95, transform: 'translate(-50%, -150%) scale(1)', offset: 0.55 },
+      { opacity: 0, transform: 'translate(-50%, -260%) scale(1.02)' },
+    ],
+    { duration: 1200, easing: 'ease-out' },
+  );
+  const done = (): void => el.remove();
+  anim.onfinish = done;
+  anim.oncancel = done;
+}
+
+/** Viewport position of a buffer cell (clamped onto the canvas). */
+function cellClientPos(line: number, col: number): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const screenY = Math.max(0, Math.min(line - viewTop, rows - 1));
+  const layout = frameLayouts[screenY];
+  const vcol = layout?.colToVisual[col] ?? col;
+  return {
+    x: rect.left + (vcol + 0.5) * cellW,
+    y: rect.top + (screenY + 0.5) * lineH,
+  };
+}
+
+/** Viewport position of the terminal text cursor cell (for paste toasts). */
+function cursorClientPos(): { x: number; y: number } {
+  const buf = term.buffer.active;
+  return cellClientPos(buf.baseY + buf.cursorY, buf.cursorX);
+}
+
+/** Viewport position of the selection start (for keyboard-copy toasts). */
+function selectionClientPos(): { x: number; y: number } {
+  const range = selectionRange();
+  if (range) return cellClientPos(range[0].line, range[0].col);
+  return lastPointer;
+}
+
+/** Copy the selection, clear it, and confirm with a toast at (x, y). */
+async function copySelectionNotify(x: number, y: number): Promise<void> {
+  const text = selectionText();
+  if (!text) return;
+  const ok = await writeClipboard(text);
+  clearSelection();
+  if (ok) showToast('تم النسخ ✓ أُضيف إلى الحافظة', x, y, 'ok');
+  else showToast('تعذّر النسخ — امنح إذن الحافظة', x, y, 'err');
+}
+
+/** Paste the clipboard at the shell cursor and confirm with a toast at (x, y). */
+async function pasteNotify(x: number, y: number): Promise<void> {
+  if (!connected) {
+    showToast('غير متّصل بالصدفة', x, y, 'err');
+    return;
   }
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    showToast('تعذّر اللصق — امنح إذن الحافظة', x, y, 'err');
+    return;
+  }
+  if (!text) return;
+  snapToBottom();
+  sendInput(text);
+  showToast('تم اللصق ✓', x, y, 'ok');
 }
 
 canvas.addEventListener('mousedown', (e) => {
+  lastPointer = { x: e.clientX, y: e.clientY };
   if (e.button !== 0) return;
   termWrap.focus();
   const p = hitTest(e.offsetX, e.offsetY);
@@ -706,13 +835,29 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   if (!selecting) return;
   const r = canvas.getBoundingClientRect();
+  lastPointer = { x: e.clientX, y: e.clientY };
   selFocus = hitTest(e.clientX - r.left, e.clientY - r.top);
   markDirty();
+});
+canvas.addEventListener('mousemove', (e) => {
+  lastPointer = { x: e.clientX, y: e.clientY };
 });
 window.addEventListener('mouseup', () => {
   if (!selecting) return;
   selecting = false;
   void copySelection(); // copy-on-select, like a native terminal
+});
+// The canvas has no native context menu worth showing (right-click would offer
+// "save image"), so repurpose it: right-click copies+clears an active selection,
+// otherwise it pastes at the shell cursor. Both confirm with an evaporating toast.
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  lastPointer = { x: e.clientX, y: e.clientY };
+  if (selectionRange()) {
+    void copySelectionNotify(e.clientX, e.clientY);
+  } else {
+    void pasteNotify(e.clientX, e.clientY);
+  }
 });
 // Double-click selects the word under the pointer.
 canvas.addEventListener('dblclick', (e) => {
@@ -832,6 +977,7 @@ setInterval(() => {
           y,
           text: l.model.text,
           baseDir: l.baseDir,
+          physical: l.physical,
           startVisualCol: l.bands[0]?.startVisualCol ?? 0,
           usedCols: l.usedCols,
         }

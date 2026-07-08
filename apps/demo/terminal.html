@@ -76,6 +76,25 @@
         display: inline-block;
       }
       .spacer { flex: 1 1 auto; }
+
+      /* Evaporating copy/paste confirmation toasts (animated from JS). */
+      .toast {
+        position: fixed;
+        z-index: 9999;
+        pointer-events: none;
+        transform: translate(-50%, -50%);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font: 600 12.5px/1.2 "Segoe UI", Tahoma, system-ui, sans-serif;
+        color: #fff;
+        white-space: nowrap;
+        background: rgba(31, 111, 235, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+      .toast.ok { background: rgba(35, 134, 54, 0.95); }
+      .toast.err { background: rgba(218, 54, 51, 0.95); }
+      .toast.info { background: rgba(31, 111, 235, 0.94); }
     </style>
   </head>
   <body>
@@ -114,9 +133,10 @@
         المحلي <code>npm run server</code> على <code>ws://127.0.0.1:5179</code>).
         انقر داخل الطرفية واكتب أوامرك — مثل <code>dir</code> أو <code>Get-Date</code>
         أو <code>echo مرحبا</code>. الأسطر العربية تُحاذى تلقائيًّا إلى اليمين.
-        مرّر بعجلة الفأرة لتصفّح السجل، اسحب لتحديد النص (يُنسخ تلقائيًّا)، وانسخ/الصق
-        بـ <code>Ctrl+Shift+C</code> / <code>Ctrl+Shift+V</code>. الخطوط مضمّنة برخصة
-        OFL وتُقرأ محليًّا.
+        مرّر بعجلة الفأرة لتصفّح السجل، اسحب لتحديد النص. الزر الأيمن ينسخ التحديد
+        (ثم يزيله) أو يلصق عند المؤشر إن لم يكن هناك تحديد، مع إشعار يؤكّد العملية.
+        <code>Ctrl+C</code> يقاطع الأمر الجاري (SIGINT) أو ينسخ التحديد إن وُجد،
+        و<code>Ctrl+V</code> يلصق. الخطوط مضمّنة برخصة OFL وتُقرأ محليًّا.
       </p>
     </main>
     <script type="module" src="/src/terminal.ts"></script>
