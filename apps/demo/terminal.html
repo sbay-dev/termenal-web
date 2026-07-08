@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>termenal-web — طرفية حقيقية في المتصفح</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --fg: #e6edf3;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --err: #f85149;
+        --term-bg: #0a0e14;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      header {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      header h1 { margin: 0 0 4px; font-size: 18px; }
+      header p { margin: 0; color: var(--muted); font-size: 13px; }
+      header code, header a { color: var(--accent); }
+      main { padding: 16px 20px; max-width: 1200px; margin: 0 auto; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+      button, label.filebtn {
+        background: #21262d;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:hover, label.filebtn:hover { border-color: var(--accent); }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      input[type="file"] { display: none; }
+      .status { color: var(--muted); font-size: 13px; }
+      .status.ok { color: var(--ok); }
+      .status.warn { color: var(--warn); }
+      .status.err { color: var(--err); }
+      .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-inline-end: 6px; vertical-align: middle; }
+      .dot.ok { background: var(--ok); }
+      .dot.err { background: var(--err); }
+      .dot.warn { background: var(--warn); }
+      .term-wrap {
+        background: var(--term-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        outline: none;
+        overflow: hidden;
+      }
+      .term-wrap:focus-within { border-color: var(--accent); }
+      canvas#screen { display: block; direction: ltr; }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+      .hint code {
+        background: #21262d;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 6px;
+        color: var(--fg);
+        direction: ltr;
+        display: inline-block;
+      }
+      .spacer { flex: 1 1 auto; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>termenal-web — طرفية حقيقية في المتصفح، موصولة بصدفة ويندوز</h1>
+      <p>
+        صدفة <code>PowerShell</code> فعلية عبر <code>ConPTY</code> ← جسر
+        <code>WebSocket</code> ← نواة VT (<code>@xterm/headless</code>) ← راسمنا العربي
+        (<code>@termenal-web/terminal</code>: BiDi + HarfBuzz). <a href="/">العرض التجريبي ←</a>
+      </p>
+    </header>
+    <main>
+      <div class="row">
+        <label class="filebtn" for="fontMono">① خط أحادي (Latin) — مثل consola.ttf</label>
+        <input id="fontMono" type="file" accept=".ttf,.otf,.ttc" />
+        <label class="filebtn" for="fontArabic">② خط عربي (اختياري) — مثل trado.ttf</label>
+        <input id="fontArabic" type="file" accept=".ttf,.otf,.ttc" />
+      </div>
+
+      <div class="row">
+        <button id="connect" disabled>الاتصال بالصدفة</button>
+        <button id="disconnect" disabled>قطع</button>
+        <span id="status" class="status warn"><span class="dot warn"></span>اختر خطًّا أحاديًّا أولًا</span>
+        <span class="spacer"></span>
+        <label class="status" for="size">الحجم: <span id="sizeVal">16</span>px</label>
+        <input id="size" type="range" min="12" max="28" value="16" />
+      </div>
+
+      <div class="term-wrap" id="termWrap" tabindex="0">
+        <canvas id="screen"></canvas>
+      </div>
+
+      <p class="hint">
+        شغّل الجسر المحلي أولًا في نافذة أوامر:
+        <code>npm run server</code>
+        (يستمع على <code>ws://127.0.0.1:5179</code>). ثم اختر خطًّا، اضغط
+        «الاتصال بالصدفة»، وانقر داخل الطرفية واكتب أوامرك — مثل <code>dir</code> أو
+        <code>Get-Date</code> أو <code>echo مرحبا</code>. الخطوط تُقرأ محليًّا ولا تُرفع.
+      </p>
+    </main>
+    <script type="module" src="/src/terminal.ts"></script>
+  </body>
+</html>

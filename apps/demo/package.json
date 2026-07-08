@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@termenal-web/terminal": "*",
-    "@termenal-web/shaping": "*"
+    "@termenal-web/shaping": "*",
+    "@xterm/headless": "^6.0.0"
   },
   "devDependencies": {
     "vite": "^7.1.5"

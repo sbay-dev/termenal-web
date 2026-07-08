@@ -11,7 +11,9 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "server": "npm start -w @termenal-web/terminal-server",
+    "terminal": "npm run dev -w @termenal-web/demo"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

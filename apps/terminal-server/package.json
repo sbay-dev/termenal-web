@@ -1,0 +1,18 @@
+{
+  "name": "@termenal-web/terminal-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local PTY bridge: spawns a real OS shell (ConPTY on Windows) and streams it over a WebSocket to the browser terminal.",
+  "license": "MIT",
+  "bin": {
+    "termenal-server": "src/server.mjs"
+  },
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.0",
+    "ws": "^8.18.0"
+  }
+}
