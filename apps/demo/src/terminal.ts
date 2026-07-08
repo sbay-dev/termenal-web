@@ -38,6 +38,8 @@ const monoInput = $<HTMLInputElement>('fontMono');
 const arabicInput = $<HTMLInputElement>('fontArabic');
 const connectBtn = $<HTMLButtonElement>('connect');
 const disconnectBtn = $<HTMLButtonElement>('disconnect');
+const fullscreenBtn = $<HTMLButtonElement>('fullscreen');
+const fsExitBtn = $<HTMLButtonElement>('fsExit');
 const statusEl = $<HTMLSpanElement>('status');
 const sizeInput = $<HTMLInputElement>('size');
 const sizeVal = $<HTMLSpanElement>('sizeVal');
@@ -119,6 +121,20 @@ let baseOff = 16;
 let cols = 80;
 let rows = 24;
 let dpr = 1;
+const GOLDEN_RATIO = (1 + Math.sqrt(5)) / 2;
+const STANDARD_COLS = 120;
+const MIN_COLS = 80;
+const MIN_ROWS = 24;
+const MAX_COLS = 320;
+const MAX_ROWS = 120;
+const ABS_MIN_COLS = 20;
+const ABS_MIN_ROWS = 6;
+
+const clampInt = (v: number, min: number, max: number): number => Math.max(min, Math.min(v, max));
+
+function fullscreenActive(): boolean {
+  return document.fullscreenElement === termWrap;
+}
 
 function computeMetrics(): void {
   if (!monoFont) return;
@@ -128,6 +144,58 @@ function computeMetrics(): void {
   cellW = Math.max(1, Math.round(advUnits * scale));
   lineH = Math.round(fontSize * 1.4);
   baseOff = Math.round(fontSize);
+}
+
+function targetGridRatio(): number {
+  // Keep the visible canvas close to the golden ratio in pixel space while
+  // respecting terminal-cell geometry (cols/rows live on the logical grid).
+  const r = GOLDEN_RATIO * (lineH / cellW);
+  return Math.max(2.8, Math.min(5.2, r));
+}
+
+function computeAvailableGridSpace(): { width: number; height: number } {
+  const style = getComputedStyle(termWrap);
+  const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const width = Math.max(cellW * ABS_MIN_COLS, termWrap.clientWidth - padX);
+  if (fullscreenActive()) {
+    const height = Math.max(lineH * ABS_MIN_ROWS, termWrap.clientHeight - padY);
+    return { width, height };
+  }
+  const topY = termWrap.getBoundingClientRect().top;
+  const height = Math.max(lineH * ABS_MIN_ROWS, window.innerHeight - topY - 90);
+  return { width, height };
+}
+
+function fitGrid(width: number, height: number): { cols: number; rows: number } {
+  const capCols = clampInt(Math.floor(width / cellW), ABS_MIN_COLS, MAX_COLS);
+  const capRows = clampInt(Math.floor(height / lineH), ABS_MIN_ROWS, MAX_ROWS);
+  const ratio = targetGridRatio();
+  const standardRows = Math.max(MIN_ROWS, Math.round(STANDARD_COLS / ratio));
+
+  // Scale standard terminal geometry (120 cols) up/down while preserving aspect.
+  const scale = Math.max(Math.min(capCols / STANDARD_COLS, capRows / standardRows), 0.2);
+  let nextCols = Math.max(ABS_MIN_COLS, Math.floor(STANDARD_COLS * scale));
+  let nextRows = Math.max(ABS_MIN_ROWS, Math.floor(standardRows * scale));
+
+  nextCols = Math.min(nextCols, capCols);
+  nextRows = Math.min(nextRows, capRows);
+
+  // Correct rounding drift so cols/rows remain on the golden-ratio track.
+  const rowsByCols = Math.max(ABS_MIN_ROWS, Math.floor(nextCols / ratio));
+  if (rowsByCols <= capRows) {
+    nextRows = rowsByCols;
+  } else {
+    nextCols = Math.max(ABS_MIN_COLS, Math.floor(nextRows * ratio));
+  }
+
+  // Preferred operational floor when there is enough space.
+  if (capCols >= MIN_COLS) nextCols = Math.max(nextCols, MIN_COLS);
+  if (capRows >= MIN_ROWS) nextRows = Math.max(nextRows, MIN_ROWS);
+
+  nextCols = clampInt(nextCols, ABS_MIN_COLS, capCols);
+  nextRows = clampInt(nextRows, ABS_MIN_ROWS, capRows);
+  return { cols: nextCols, rows: nextRows };
 }
 
 // ------------------------------------------------------------------ terminal
@@ -147,11 +215,10 @@ const markDirty = (): void => {
 function applyGrid(): void {
   if (!monoFont) return;
   computeMetrics();
-  const availW = Math.max(cellW * 20, termWrap.clientWidth - 16);
-  cols = Math.max(20, Math.floor(availW / cellW));
-  const topY = termWrap.getBoundingClientRect().top;
-  const availH = Math.max(lineH * 6, window.innerHeight - topY - 90);
-  rows = Math.min(60, Math.max(6, Math.floor(availH / lineH)));
+  const avail = computeAvailableGridSpace();
+  const next = fitGrid(avail.width, avail.height);
+  cols = next.cols;
+  rows = next.rows;
 
   const cssW = cols * cellW;
   const cssH = rows * lineH;
@@ -422,6 +489,7 @@ function render(): void {
   }
 
   const glyphs = countGlyphs();
+  const canvasAspect = rows > 0 ? (cols * cellW) / (rows * lineH) : 0;
   (window as unknown as Record<string, unknown>).__termStats = {
     cols,
     rows,
@@ -431,6 +499,9 @@ function render(): void {
     glyphs,
     scrolledBack: baseY - viewTop,
     hasSelection: selectionRange() !== null,
+    canvasAspect,
+    goldenDelta: Math.abs(canvasAspect - GOLDEN_RATIO),
+    fullscreen: fullscreenActive(),
   };
 }
 
@@ -944,16 +1015,53 @@ async function autoInit(): Promise<void> {
 }
 
 // ------------------------------------------------------------------- controls
+function syncFullscreenButton(): void {
+  if (!document.fullscreenEnabled) {
+    fullscreenBtn.disabled = true;
+    fsExitBtn.disabled = true;
+    fsExitBtn.hidden = true;
+    fullscreenBtn.textContent = 'ملء الشاشة غير مدعوم';
+    return;
+  }
+  fullscreenBtn.disabled = false;
+  fsExitBtn.disabled = false;
+  const active = fullscreenActive();
+  fullscreenBtn.textContent = active ? 'الخروج من ملء الشاشة' : 'ملء الشاشة';
+  fsExitBtn.hidden = !active;
+}
+
+async function toggleFullscreen(): Promise<void> {
+  if (!document.fullscreenEnabled) return;
+  try {
+    if (fullscreenActive()) await document.exitFullscreen();
+    else await termWrap.requestFullscreen();
+  } catch {
+    showToast('تعذّر تفعيل ملء الشاشة', window.innerWidth * 0.5, 56, 'err');
+  }
+}
+
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
+fullscreenBtn.addEventListener('click', () => {
+  void toggleFullscreen();
+});
+fsExitBtn.addEventListener('click', () => {
+  void toggleFullscreen();
+});
 sizeInput.addEventListener('input', () => {
   fontSize = Number(sizeInput.value);
   sizeVal.textContent = String(fontSize);
   applyGrid();
 });
+document.addEventListener('fullscreenchange', () => {
+  syncFullscreenButton();
+  if (monoFont) applyGrid();
+  termWrap.focus();
+});
 window.addEventListener('resize', () => {
   if (monoFont) applyGrid();
 });
+syncFullscreenButton();
 
 // --------------------------------------------------------------- render loop
 function frame(): void {

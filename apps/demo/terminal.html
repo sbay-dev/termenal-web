@@ -56,6 +56,7 @@
       .dot.err { background: var(--err); }
       .dot.warn { background: var(--warn); }
       .term-wrap {
+        position: relative;
         background: var(--term-bg);
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -64,6 +65,40 @@
         overflow: hidden;
       }
       .term-wrap:focus-within { border-color: var(--accent); }
+      .term-wrap:fullscreen,
+      .term-wrap:-webkit-full-screen {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        padding: 24px;
+        border: 0;
+        border-radius: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #060b12;
+      }
+      .term-wrap:fullscreen canvas#screen,
+      .term-wrap:-webkit-full-screen canvas#screen {
+        border-radius: 8px;
+        box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.35);
+      }
+      .fs-exit {
+        display: none;
+        position: absolute;
+        top: 12px;
+        inset-inline-start: 12px;
+        z-index: 4;
+        background: rgba(13, 17, 23, 0.92);
+        color: var(--fg);
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .term-wrap:fullscreen .fs-exit,
+      .term-wrap:-webkit-full-screen .fs-exit { display: block; }
       canvas#screen { display: block; direction: ltr; }
       .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
       .hint code {
@@ -118,6 +153,7 @@
       <div class="row">
         <button id="connect" disabled>إعادة الاتصال</button>
         <button id="disconnect" disabled>قطع</button>
+        <button id="fullscreen" type="button">ملء الشاشة</button>
         <span id="status" class="status warn"><span class="dot warn"></span>يبدأ التشغيل…</span>
         <span class="spacer"></span>
         <label class="status" for="size">الحجم: <span id="sizeVal">16</span>px</label>
@@ -125,6 +161,7 @@
       </div>
 
       <div class="term-wrap" id="termWrap" tabindex="0">
+        <button id="fsExit" class="fs-exit" type="button">الخروج من ملء الشاشة</button>
         <canvas id="screen"></canvas>
       </div>
 
@@ -136,7 +173,8 @@
         مرّر بعجلة الفأرة لتصفّح السجل، اسحب لتحديد النص. الزر الأيمن ينسخ التحديد
         (ثم يزيله) أو يلصق عند المؤشر إن لم يكن هناك تحديد، مع إشعار يؤكّد العملية.
         <code>Ctrl+C</code> يقاطع الأمر الجاري (SIGINT) أو ينسخ التحديد إن وُجد،
-        و<code>Ctrl+V</code> يلصق. الخطوط مضمّنة برخصة OFL وتُقرأ محليًّا.
+        و<code>Ctrl+V</code> يلصق. زر <code>ملء الشاشة</code> يحافظ على أبعاد ثابتة
+        بنسبة ذهبية مستقرة عند التكبير. الخطوط مضمّنة برخصة OFL وتُقرأ محليًّا.
       </p>
     </main>
     <script type="module" src="/src/terminal.ts"></script>
